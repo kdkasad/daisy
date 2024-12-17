@@ -40,7 +40,7 @@ fn main() {
 
     let hosts: Vec<&String> = args.get_many::<String>("hosts").unwrap().collect::<_>();
     println!("{:?}", hosts);
-    if hosts.len() < 1 {
+    if hosts.is_empty() {
         eprintln!("Error: At least one host required.");
     }
 

