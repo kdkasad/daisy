@@ -136,14 +136,9 @@ fn spawn_shell(session: &mut ssh2::Session) -> Result<ssh2::Channel, ssh2::Error
 /// Returns the path to the file on the remote host.
 fn upload_executable_scp(session: &mut ssh2::Session) -> Result<String, UploadExecutableError> {
     log::trace!("Uploading executable over SCP");
-    // TODO: See if there's a less system-dependent way to get the executable
-    let exe_path =
-        std::env::current_exe().expect("Unable to locate the executable of the current process");
-    let exe_bytes: Vec<u8> =
-        std::fs::read(&exe_path).expect("Unable to read the current process' executable");
-    log::trace!("Found executable at path {}", exe_path.to_string_lossy());
 
     // Upload bytes over SCP
+    let exe_bytes = read_current_exe()?;
     let pathname = "/tmp/daisy".to_string();
     let path = Path::new(&pathname);
     let mut scp = session.scp_send(path, 0o700, exe_bytes.len() as u64, None)?;
@@ -175,13 +170,7 @@ fn upload_executable_printf(session: &mut ssh2::Session) -> Result<String, Uploa
     writeln!(channel, "exec 1>\"$file\"")?;
 
     // Send the bytes of the executable as a bunch of printf(1) commands
-    // TODO: See if there's a less system-dependent way to get the executable
-    let exe_path =
-        std::env::current_exe().expect("Unable to locate the executable of the current process");
-    let exe_bytes: Vec<u8> =
-        std::fs::read(&exe_path).expect("Unable to read the current process' executable");
-    log::trace!("Found executable at path {}", exe_path.to_string_lossy());
-
+    let exe_bytes = read_current_exe()?;
     log::trace!("Sending {} bytes...", exe_bytes.len());
     const MAX_LINE_LEN: usize = 2048;
     const BYTES_PER_LINE: usize = (MAX_LINE_LEN - "printf ''".len()) / "\\x00".len();
@@ -241,6 +230,16 @@ fn upload_executable_printf(session: &mut ssh2::Session) -> Result<String, Uploa
     channel.wait_close()?;
 
     Ok(filename)
+}
+
+/// Reads the contents of the current process' executable and returns the bytes.
+fn read_current_exe() -> Result<Vec<u8>, std::io::Error> {
+    let exe_path =
+        std::env::current_exe()?;
+    let exe_bytes: Vec<u8> =
+        std::fs::read(&exe_path)?;
+    log::trace!("Found current executable at path {}", exe_path.to_string_lossy());
+    Ok(exe_bytes)
 }
 
 #[derive(Debug, thiserror::Error)]
