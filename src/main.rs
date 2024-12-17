@@ -18,31 +18,46 @@
  * Daisy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use clap::{arg, crate_authors, crate_description, crate_name};
-use daisy::{worm::infect, config::HostSpec};
+use std::path::{Path, PathBuf};
+
+use clap::Parser;
+use daisy::config::DaisyConfig;
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TerminalMode};
 
+#[derive(Parser)]
+#[command(version, about, author, long_about = None)]
+#[command(next_line_help = true)] // Display option descriptions on a new line
+struct CLIOptions {
+    /// Configuration file path.
+    #[arg(short = 'f', long, value_name = "FILE", default_value = "daisy.toml")]
+    config_file: PathBuf,
+
+    /// Logging verbosity.
+    /// Specify multiple times to increase verbosity.
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    verbose: u8,
+}
+
 fn main() {
+    // Parse CLI options
+    let cli = CLIOptions::parse();
+
+    // Initialize logging system
     simplelog::TermLogger::init(
-        LevelFilter::Trace,
+        match cli.verbose {
+            0 => LevelFilter::Warn,
+            1 => LevelFilter::Info,
+            2 => LevelFilter::Debug,
+            _ => LevelFilter::Trace,
+        },
         Config::default(),
         TerminalMode::Mixed,
         ColorChoice::Auto,
     )
     .expect("Failed to initialize logging system");
 
-    let args = clap::Command::new(crate_name!())
-        .author(crate_authors!())
-        .about(crate_description!())
-        .arg(arg!(<hosts> ... "A list of hosts to connect to."))
-        .get_matches();
-
-    let hosts: Vec<&String> = args.get_many::<String>("hosts").unwrap().collect::<_>();
-    println!("{:?}", hosts);
-    if hosts.is_empty() {
-        eprintln!("Error: At least one host required.");
-    }
-
-    infect(&HostSpec::from(hosts[0].as_str())).unwrap();
+    // Parse config file
+    let config = DaisyConfig::load(&cli.config_file);
+    println!("{:?}", &config);
 }

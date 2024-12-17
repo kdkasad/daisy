@@ -1,0 +1,7 @@
+# Command to display each line of stdin as a notification on macOS
+destination_command = 'while IFS="" read -r ans ; do osascript -e "display notification \"${ans//\"/\\\"}\"" ; done'
+destination_command_oneshot = false
+
+hosts = [
+    "localhost:22",
+]
