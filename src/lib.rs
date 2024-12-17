@@ -38,7 +38,7 @@ impl From<&str> for HostSpec {
         } else {
             HostSpec {
                 host_addr: spec.to_owned(),
-                username: users::get_current_username()
+                username: uzers::get_current_username()
                     .expect("No username specified and unable to retrieve the current user's name")
                     .to_string_lossy()
                     .to_string(),
