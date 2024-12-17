@@ -6,7 +6,7 @@ edition = "2021"
 authors = [
     "Kian Kasad <kian@kasad.com>",
 ]
-license = "GPL-3.0-only"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 clap = { version = "4.5.23", features = ["cargo"] }
