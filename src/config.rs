@@ -18,7 +18,7 @@
  * Daisy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{io::Read, path::Path};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -39,16 +39,56 @@ pub struct DaisyConfig {
 
 impl DaisyConfig {
     pub fn load(path: &Path) -> Result<Self, Error> {
-        let contents = if path == Path::new("-") {
+        if path == Path::new("-") {
             // Read config from stdin
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf)?;
-            buf
+            Self::load_from_stdin()
         } else {
             // Read from file
-            std::fs::read_to_string(path)?
-        };
-        Ok(toml::from_str(&contents)?)
+            log::debug!("Loading configuration from {}", path.display());
+            let contents = std::fs::read_to_string(path)?;
+            Ok(toml::from_str(&contents)?)
+        }
+    }
+
+    /// Reads configuration file from standard input
+    ///
+    /// The first line of input must be a format marker. The format marker is of the form
+    /// `<lang>:<length>`. `<lang>` specifies the language/format of the configuration data.
+    /// `<length>` specifies the amount of data to read; for text formats, it is the number of lines, and for
+    /// binary formats, the number of bytes.
+    ///
+    /// Currently, the list of supported `<lang>` values is:
+    /// - `TOML`: [TOML](https://toml.io/) format.
+    pub fn load_from_stdin() -> Result<Self, Error> {
+        log::debug!("Loading configuration from standard input");
+        let stdin = std::io::stdin();
+        let mut firstline = String::new();
+        stdin.read_line(&mut firstline)?;
+        // Remove trailing newline
+        if &firstline[(firstline.len() - 1)..] != "\n" {
+            log::error!("No newline at end of first line");
+            return Err(Error::InvalidFormatMarker(firstline));
+        } else {
+            firstline.truncate(firstline.len() - 1);
+        }
+
+        // Read & parse based on format marker
+        if let Some(lenstr) = firstline.strip_prefix("TOML:") {
+            let lines: usize = lenstr.parse().map_err(|_e| {
+                log::error!("Found TOML marker but failed to parse number of lines");
+                Error::InvalidFormatMarker(firstline)
+            })?;
+            log::debug!("Reading TOML configuration from stdin");
+            // Read until "EOF" line
+            let mut buf = String::new();
+            for _ in 0..lines {
+                stdin.read_line(&mut buf)?;
+            }
+            return Ok(toml::from_str(&buf)?);
+        }
+
+        log::error!("Malformed or missing confguration format marker");
+        Err(Error::InvalidFormatMarker(firstline))
     }
 }
 
@@ -92,12 +132,15 @@ impl From<HostSpec> for String {
     }
 }
 
-//// Configuration-related error type
+/// Configuration-related error type
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("I/O error: {}", .0)]
     IOError(#[from] std::io::Error),
 
     #[error("TOML parse error: {}", .0)]
-    ParseError(#[from] toml::de::Error),
+    TOMLError(#[from] toml::de::Error),
+
+    #[error("Invalid format marker line. First line was \"{}\".", .0)]
+    InvalidFormatMarker(String),
 }

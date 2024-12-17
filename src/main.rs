@@ -18,7 +18,7 @@
  * Daisy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Parser;
 use daisy::config::DaisyConfig;
@@ -58,6 +58,12 @@ fn main() {
     .expect("Failed to initialize logging system");
 
     // Parse config file
-    let config = DaisyConfig::load(&cli.config_file);
+    let config = match DaisyConfig::load(&cli.config_file) {
+        Ok(config) => config,
+        Err(err) => {
+            log::error!("Failed to load configuration: {}", err);
+            return;
+        }
+    };
     println!("{:?}", &config);
 }
