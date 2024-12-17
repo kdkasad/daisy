@@ -18,5 +18,5 @@
  * Daisy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-pub mod worm;
 pub mod config;
+pub mod worm;
