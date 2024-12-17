@@ -99,6 +99,9 @@ pub fn infect(host: &HostSpec) -> Result<ChainLink, Error> {
     let mut channel = session
         .channel_session()
         .map_err(Error::ExecuteDaisy)?;
+    log::trace!("Requesting SSH agent forwarding");
+    channel.request_auth_agent_forwarding().map_err(Error::ForwardAgent)?;
+    log::trace!("SSH agent forwarding successful");
     channel
         .exec(&remote_exe_path)
         .map_err(Error::ExecuteDaisy)?;
@@ -244,23 +247,26 @@ fn read_current_exe() -> Result<Vec<u8>, std::io::Error> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Connection to remote host failed")]
+    #[error("Connection to remote host failed: {}", .0)]
     ConnectionFailed(#[source] std::io::Error),
 
-    #[error("SSH error occurred before authentication")]
+    #[error("SSH error occurred before authentication: {}", .0)]
     SSHPreauthError(#[source] ssh2::Error),
 
-    #[error("SSH authentication failed")]
+    #[error("SSH authentication failed: {}", .0)]
     SSHAuthenticationFailed(#[source] ssh2::Error),
 
-    #[error("Failed to spawn shell on remote host")]
+    #[error("Failed to spawn shell on remote host: {}", .0)]
     SpawnShell(#[source] ssh2::Error),
 
-    #[error("Failed to upload executable to remote host")]
+    #[error("Failed to upload executable to remote host: {}", .0)]
     UploadExecutable(#[from] UploadExecutableError),
 
-    #[error("Failed to execute uploaded Daisy binary")]
+    #[error("Failed to execute uploaded Daisy binary: {}", .0)]
     ExecuteDaisy(#[source] ssh2::Error),
+
+    #[error("Failed to forward ssh-agent: {}", .0)]
+    ForwardAgent(#[source] ssh2::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
