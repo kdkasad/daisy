@@ -31,6 +31,8 @@ use std::{
 
 use libssh2_sys::LIBSSH2_ERROR_CHANNEL_REQUEST_DENIED;
 
+use crate::config::HostSpec;
+
 /// # Chain link
 /// Represents a handle on the connection to the next link.
 pub struct ChainLink {
@@ -38,7 +40,7 @@ pub struct ChainLink {
     ssh_channel: ssh2::Channel,
 }
 
-pub fn infect(host: &crate::HostSpec) -> Result<ChainLink, Error> {
+pub fn infect(host: &HostSpec) -> Result<ChainLink, Error> {
     // Establish TCP connection
     log::trace!("Connecting to {}", &host.host_addr);
     let conn =

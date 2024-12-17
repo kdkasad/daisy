@@ -19,7 +19,7 @@
  */
 
 use clap::{arg, crate_authors, crate_description, crate_name};
-use daisy::{worm::infect, HostSpec};
+use daisy::{worm::infect, config::HostSpec};
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TerminalMode};
 
