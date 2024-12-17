@@ -25,7 +25,7 @@
 //!
 
 use std::{
-    io::{Read, Write},
+    io::{ErrorKind, Read, Write},
     path::Path,
 };
 
@@ -133,7 +133,7 @@ fn spawn_shell(session: &mut ssh2::Session) -> Result<ssh2::Channel, ssh2::Error
 ///
 /// Returns the path to the file on the remote host.
 fn upload_executable_scp(session: &mut ssh2::Session) -> Result<String, UploadExecutableError> {
-    log::info!("Uploading executable over SCP");
+    log::trace!("Uploading executable over SCP");
     // TODO: See if there's a less system-dependent way to get the executable
     let exe_path =
         std::env::current_exe().expect("Unable to locate the executable of the current process");
@@ -150,7 +150,7 @@ fn upload_executable_scp(session: &mut ssh2::Session) -> Result<String, UploadEx
     scp.wait_eof()?;
     scp.close()?;
     scp.wait_close()?;
-    log::info!("Uploading file finished");
+    log::trace!("Uploading file finished");
     Ok(pathname)
 }
 
@@ -158,7 +158,7 @@ fn upload_executable_scp(session: &mut ssh2::Session) -> Result<String, UploadEx
 ///
 /// Returns the path to the file on the remote host.
 fn upload_executable_printf(session: &mut ssh2::Session) -> Result<String, UploadExecutableError> {
-    log::info!("Uploading executable using shell commands");
+    log::trace!("Uploading executable using shell commands");
 
     let mut channel = spawn_shell(session)?;
 
@@ -180,7 +180,8 @@ fn upload_executable_printf(session: &mut ssh2::Session) -> Result<String, Uploa
         std::fs::read(&exe_path).expect("Unable to read the current process' executable");
     log::trace!("Found executable at path {}", exe_path.to_string_lossy());
 
-    const MAX_LINE_LEN: usize = 256;
+    log::trace!("Sending {} bytes...", exe_bytes.len());
+    const MAX_LINE_LEN: usize = 2048;
     const BYTES_PER_LINE: usize = (MAX_LINE_LEN - "printf ''".len()) / "\\x00".len();
     for line in exe_bytes.chunks(BYTES_PER_LINE) {
         write!(channel, "printf '")?;
@@ -190,7 +191,7 @@ fn upload_executable_printf(session: &mut ssh2::Session) -> Result<String, Uploa
         writeln!(channel, "'")?;
     }
 
-    log::info!("Sent all executable file data");
+    log::trace!("Sent all executable file data");
 
     // Reset stdout to the original stream
     writeln!(channel, "exec 1>&3")?;
@@ -199,21 +200,41 @@ fn upload_executable_printf(session: &mut ssh2::Session) -> Result<String, Uploa
     // Make saved file executable
     writeln!(channel, "chmod o+x \"$file\"")?;
 
+    // Use non-blocking I/O
+    let is_blocking = session.is_blocking();
+    session.set_blocking(false);
+
     // Discard all data currently buffered on stdout
-    let mut buf: Vec<u8> = Vec::with_capacity(1024);
-    channel.read_to_end(&mut buf)?;
-    drop(buf);
+    log::trace!("Discarding data received up until now...");
+    let mut bytes_discarded: usize = 0;
+    let mut buf = [0u8; 4096];
+    loop {
+        match channel.read(&mut buf) {
+            Ok(0) => break,
+            Err(err) if err.kind() == ErrorKind::WouldBlock => break,
+            Ok(chunksize) => bytes_discarded += chunksize,
+            Err(err) if err.kind() == ErrorKind::Interrupted => (),
+            Err(err) => return Err(err)?,
+        }
+        log::debug!("read complete");
+    }
+    log::trace!("Discarded {} bytes", bytes_discarded);
 
     // Send command to print temporary file name
+    log::trace!("Attempting to get uploaded file path");
     let mut buf: Vec<u8> = Vec::with_capacity(1024);
     writeln!(channel, "printf '%s' \"$file\"")?;
+    channel.flush()?;
+    channel.send_eof()?;
+    session.set_blocking(true);
+    channel.wait_eof()?;
     channel.read_to_end(&mut buf)?;
     let filename: String = String::from_utf8_lossy(&buf).to_string();
-    log::info!("Uploaded file stored at {}", &filename);
+
+    // Restore previous blocking state
+    session.set_blocking(is_blocking);
 
     // Close shell channel
-    channel.send_eof()?;
-    channel.wait_eof()?;
     channel.close()?;
     channel.wait_close()?;
 
