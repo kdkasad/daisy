@@ -25,6 +25,10 @@ use serde::{Deserialize, Serialize};
 /// Daisy configuration structure
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DaisyConfig {
+    /// Index of this link within the chain. 0 is the sender.
+    #[serde(default)]
+    pub link_index: usize,
+
     /// The command to run on the destination machine to receive/display messages.
     pub destination_command: String,
 

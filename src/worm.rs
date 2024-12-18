@@ -125,7 +125,10 @@ pub fn infect(host: &HostSpec, config: &DaisyConfig) -> Result<ChainLink, Error>
     log::trace!("Executed \"{}\" on remote host", &cmd);
 
     // Upload configuration
-    let config_toml = toml::to_string(config).expect("Failed to serialize configuration data");
+    // FIXME: Find a solution that doesn't involve cloning
+    let mut new_config = config.clone();
+    new_config.link_index += 1;
+    let config_toml = toml::to_string(&new_config).expect("Failed to serialize configuration data");
     let lines = config_toml.chars().filter(|c| *c == '\n').count();
     log::debug!("Uploading configuration data");
     log::trace!("Sending config ({} lines):\n{}", lines, &config_toml);

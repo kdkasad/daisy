@@ -58,7 +58,7 @@ fn main() {
     .expect("Failed to initialize logging system");
 
     // Parse config file
-    let mut config = match DaisyConfig::load(&cli.config_file) {
+    let config = match DaisyConfig::load(&cli.config_file) {
         Ok(config) => config,
         Err(err) => {
             log::error!("Failed to load configuration: {}", err);
@@ -66,12 +66,11 @@ fn main() {
         }
     };
 
-    // If there is a host to connect to, do so.
-    // Otherwise, print the configuration object.
-    if config.hosts.is_empty() {
+    // If at the destination, print the configuration object.
+    // Otherwise, connect to the next host.
+    if config.link_index >= config.hosts.len() {
         println!("{:?}", &config);
     } else {
-        let host = config.hosts.remove(0);
-        infect(&host, &config).unwrap();
+        infect(config.hosts.first().unwrap(), &config).unwrap();
     }
 }
