@@ -26,24 +26,43 @@
 
 use std::{
     io::{ErrorKind, Read, Write},
+    net::{Shutdown, TcpStream},
+    os::fd::AsRawFd,
     path::Path,
 };
 
 use libssh2_sys::LIBSSH2_ERROR_CHANNEL_REQUEST_DENIED;
 
-use crate::config::HostSpec;
+use crate::config::{DaisyConfig, HostSpec};
 
 /// # Chain link
 /// Represents a handle on the connection to the next link.
 pub struct ChainLink {
+    tcp_stream: TcpStream,
     ssh_session: ssh2::Session,
     ssh_channel: ssh2::Channel,
 }
 
-pub fn infect(host: &HostSpec) -> Result<ChainLink, Error> {
+impl Drop for ChainLink {
+    fn drop(&mut self) {
+        // Ignore errors
+        let _ = self.ssh_channel.send_eof();
+        let _ = self.ssh_channel.close();
+        let _ = self
+            .ssh_session
+            .disconnect(Some(ssh2::DisconnectCode::ByApplication), "", None);
+        let _ = self.tcp_stream.shutdown(Shutdown::Both);
+    }
+}
+
+/// Extend the chain to the given host
+///
+/// - `host`: The host to connect to.
+/// - `config`: The configuration object to upload to the remote host.
+pub fn infect(host: &HostSpec, config: &DaisyConfig) -> Result<ChainLink, Error> {
     // Establish TCP connection
     log::trace!("Connecting to {}", &host.host_addr);
-    let conn = std::net::TcpStream::connect(&host.host_addr).map_err(Error::ConnectionFailed)?;
+    let conn = TcpStream::connect(&host.host_addr).map_err(Error::ConnectionFailed)?;
 
     // Create SSH session.
     let mut session = ssh2::Session::new().map_err(Error::SSHPreauthError)?;
@@ -52,7 +71,7 @@ pub fn infect(host: &HostSpec) -> Result<ChainLink, Error> {
 
     // Perform SSH handshake
     log::trace!("Beginning SSH handshake");
-    session.set_tcp_stream(conn);
+    session.set_tcp_stream(conn.as_raw_fd());
     session.handshake().map_err(Error::SSHPreauthError)?;
     log::trace!("SSH handshake complete");
 
@@ -101,20 +120,39 @@ pub fn infect(host: &HostSpec) -> Result<ChainLink, Error> {
         .request_auth_agent_forwarding()
         .map_err(Error::ForwardAgent)?;
     log::trace!("SSH agent forwarding successful");
+    let cmd = format!("{} --config-file -", remote_exe_path);
+    channel.exec(&cmd).map_err(Error::ExecuteDaisy)?;
+    log::trace!("Executed \"{}\" on remote host", &cmd);
+
+    // Upload configuration
+    let config_toml = toml::to_string(config).expect("Failed to serialize configuration data");
+    let lines = config_toml.chars().filter(|c| *c == '\n').count();
+    log::debug!("Uploading configuration data");
+    log::trace!("Sending config ({} lines):\n{}", lines, &config_toml);
+    writeln!(channel, "TOML:{}", lines).map_err(Error::UploadConfig)?;
     channel
-        .exec(&remote_exe_path)
-        .map_err(Error::ExecuteDaisy)?;
-    log::trace!("Executed Daisy on remote host");
+        .write_all(config_toml.as_bytes())
+        .map_err(Error::UploadConfig)?;
+    channel.flush().map_err(Error::UploadConfig)?;
+    log::debug!("Configuration sent");
 
     // DEBUG: Read command output. This is just to verify that the command was executed.
     let mut buf: Vec<u8> = Vec::new();
-    channel.read_to_end(&mut buf).unwrap();
-    std::io::stdout().write_all(&buf).unwrap();
-    channel.stderr().read_to_end(&mut buf).unwrap();
-    std::io::stdout().write_all(&buf).unwrap();
-    channel.wait_eof().unwrap();
+    let mut stdout = std::io::stdout();
+    while !channel.eof() {
+        log::trace!("Reading data from remote");
+        channel.read_to_end(&mut buf).unwrap();
+        stdout.write_all(&buf).unwrap();
+        buf.clear();
+        channel.stderr().read_to_end(&mut buf).unwrap();
+        stdout.write_all(&buf).unwrap();
+        buf.clear();
+        channel.wait_eof().unwrap();
+    }
+    log::debug!("Got EOF from remote");
 
     Ok(ChainLink {
+        tcp_stream: conn,
         ssh_session: session,
         ssh_channel: channel,
     })
@@ -267,6 +305,9 @@ pub enum Error {
 
     #[error("Failed to forward ssh-agent: {}", .0)]
     ForwardAgent(#[source] ssh2::Error),
+
+    #[error("Failed to upload configuration data: {}", .0)]
+    UploadConfig(#[source] std::io::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

